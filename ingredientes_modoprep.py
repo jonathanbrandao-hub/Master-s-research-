@@ -4,6 +4,9 @@ from bs4 import BeautifulSoup
 import re
 import pandas as pd
 import re
+import time
+
+
 async def extrair_ingredientes_de_receita(receita_url):
 #Extrair todos os ingredientes de cada receita individualmente
 
@@ -63,6 +66,7 @@ def parse_rating(texto):
     if sufixo == "k":
         numero *= 1000
     return int(numero)
+#Se nao tiver rating a funcao retorna "0".
 
 def extrair_links_receitas(html):
     soup = BeautifulSoup(html, "html.parser")
@@ -86,12 +90,54 @@ def extrair_links_receitas(html):
 
     return links_receitas
 
+#definir função que extrai o rendimento da receita
+async def extrair_rendimento(html):
+    async with AsyncWebCrawler() as crawler:
+        result = await crawler.arun(url=html)
+        soup = BeautifulSoup(result.html, "html.parser")
+        head = soup.find("h2", string=lambda t: t and "Ingredientes" in t)
+        if not head:
+            return None
+        
+        texto = head.get_text(" ", strip=True)
+        
+        match = re.search(r"\((\d+)\s*por", texto.lower())
+        
+        if match:
+            rendimento = match.group(1)
+            return rendimento
+
+        return None
+
+#definir função que extrai a categoria da receita
+async def extrair_classe(html):
+    async with AsyncWebCrawler() as crawler:
+        result = await crawler.arun(url=html)
+        soup = BeautifulSoup(result.html, "html.parser")
+        categoria_tag = soup.find("a", class_ = "u-some-link", href = lambda href: href 
+                                  and "/categorias/" in href)
+
+        if categoria_tag:
+            categoria = categoria_tag.get_text(strip=True)
+            categoria = categoria.replace("Receitas ","")
+            return categoria
+        
+        return None
+
+
 async def main():
+    inicio = time.time()
     dados = []
-    for i in range (1,100):#13219 é o total
+    time.sleep(1)
+    for i in range (1,2):#13228 é o total
         url_base =  f"https://www.tudogostoso.com.br/receitas?page={i}"
+        await asyncio.sleep(0.5)
         async with AsyncWebCrawler() as crawler:
-            result = await crawler.arun(url=url_base)
+            try:
+                result = await crawler.arun(url=url_base)
+            except Exception as e:
+                print(f"Erro em {url_base}: {e}")
+                continue
         #1 Encontrar os links presentes no site (apenas os desejados)
             links = extrair_links_receitas(result.html)
         #2Extrair título, ingredientes e modo de preparo de cada link
@@ -102,21 +148,30 @@ async def main():
                 rating = i[2]
                 ingredientes = await extrair_ingredientes_de_receita(link_receita)
                 preparo = await extrair_modo_preparo(link_receita)
+                categoria = await extrair_classe(link_receita)
+                rendimento = await extrair_rendimento(link_receita)
         #Adicionar cada um como um dicionário 
                 dados.append({
                         "titulo": titulo,
                         "ingredientes": "\n".join(ingredientes),
                         "preparo": "\n".join(preparo),
                         "url": link_receita,
-                        "rating": rating
-                    })
+                        "rating": rating,
+                        "categoria": categoria,
+                        "rendimento(porcoes)": rendimento})
     #Criar planilha
+    fim = time.time()
+    tempo_total = fim - inicio
+    print(f"Tempo de execução: {tempo_total:.4f} segundos")
+    
     df = pd.DataFrame(dados)
+
+    
     print(df)
         
 
     # 3. Cria planilha Excel
-    df.to_excel("receitas_tudogostoso_ratings.xlsx")
+    #df.to_excel("receitas_tudogostoso_class.xlsx")
 
     #print("\n Planilha criada com sucesso")
 
@@ -138,7 +193,13 @@ Talvez eu possa fazer que nem o livro Authentic Brazilian homecooking e dividir 
 *Deserts
 
 Sobre o dataset:
-Posso usar a AIST primeiro e vasculhar se ela contem o ingrediente que é usado na receita, se sim eu pego dela, se não eu uso o outro dataset.
+Posso usar a AIST primeiro e vasculhar se ela contem o ingrediente que é usado na receita, 
+se sim eu pego dela, se não eu uso o outro dataset.
 
 Para a apresentação joint meeting: Colocar um slide da netflix e amazon mostrando content-based e collaborative filtering
-'''
+Ja temos 13226 receitas no site. 
+Tem que ver como vamos lidar com as receitas que não tem avaliação, ou seja, rating = 0.
+
+Preciso definir uma funcao que extraia o rendimento da receita e uma que extraia a categoria da receita.
+
+ '''
